@@ -97,7 +97,6 @@ namespace RobloxVersionMonitor
                             versionNode.Nodes.Add("Commit:     " + info.Commit);
                         }
 
-                        logNode.Nodes.Add("Deploy Log:   " + deployLog.SourceLog);
                         logNode.Nodes.Add("GUID:         " + deployLog.VersionGuid);
                         logNode.Nodes.Add("Deploy Time:  " + name);
                     }
@@ -108,7 +107,6 @@ namespace RobloxVersionMonitor
         private async void UpdateLogs(object sender = null, EventArgs e = null)
         {
             Text = "(Refreshing)";
-            UseWaitCursor = true;
             await Task.Delay(500);
 
             List<string> newLogs = new List<string>();
@@ -142,7 +140,6 @@ namespace RobloxVersionMonitor
             }
 
             Text = "Roblox Version Monitor";
-            UseWaitCursor = false;
         }
 
         private void RobloxVersionMonitor_Load(object sender, EventArgs e)
@@ -190,8 +187,11 @@ namespace RobloxVersionMonitor
 
                 logBranch.StatusPage.Controls.Add(logBranch.StatusLabel);
                 logBranch.HistoryPage.Controls.Add(logBranch.HistoryTree);
+
                 currentLogs[branch] = logBranch;
             }
+
+            updateNotifier.Icon = SystemIcons.Information;
 
             Timer timer = new Timer { Interval = 30000 };
             timer.Tick += new EventHandler(UpdateLogs);

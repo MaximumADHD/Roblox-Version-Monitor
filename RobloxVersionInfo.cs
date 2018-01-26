@@ -10,11 +10,11 @@ namespace RobloxVersionMonitor
 {
     public enum RobloxDeployType
     {
-        Client_Windows,
-        Client_Mac,
-        Studio_Windows,
-        Studio_Mac,
-        Server
+        RobloxPlayer_Windows,
+        RobloxPlayer_Mac,
+        RobloxStudio_Windows,
+        RobloxStudio_Mac,
+        RobloxServer_Dedicated
     }
 
     public struct RobloxVersionInfo
@@ -86,10 +86,10 @@ namespace RobloxVersionMonitor
             foreach (string log in deployLogs)
             {
                 Match match = Regex.Match(log, MatchPattern);
-                string[] data = match.Groups.Cast<Group>()  // Cast the groups into an IEnumerable<Group>.
-                    .Select(group => group.Value)           // Select the values of the groups
-                    .Where(value => value.Length != 0)      // where the values aren't empty strings
-                    .ToArray();                             // and cast the values into a string array.
+                string[] data = match.Groups.Cast<Group>() 
+                    .Select(group => group.Value)
+                    .Where(value => value.Length != 0)
+                    .ToArray();
 
                 RobloxDeployLog deployLog = new RobloxDeployLog();
                 string deployType = data[1];
@@ -127,23 +127,23 @@ namespace RobloxVersionMonitor
                 string winDeployHistory = await http.DownloadStringTaskAsync(setupUrl + "DeployHistory.txt");
                 winDeployHistory = winDeployHistory
                     .Replace("WindowsPlayer", "Client")
-                    .Replace("Client", "Client_Windows")
-                    .Replace("Studio", "Studio_Windows");
+                    .Replace("Client", "RobloxPlayer_Windows")
+                    .Replace("Studio", "RobloxStudio_Windows");
 
                 string macDeployHistory = await http.DownloadStringTaskAsync(setupUrl + "mac/DeployHistory.txt");
                 macDeployHistory = macDeployHistory
-                    .Replace("Client", "Client_Mac")
-                    .Replace("Studio", "Studio_Mac");
+                    .Replace("Client", "RobloxPlayer_Mac")
+                    .Replace("Studio", "RobloxStudio_Mac");
 
                 deployHistory = (winDeployHistory + '\n' + macDeployHistory)
-                    .Replace("RccService", "Server");
+                    .Replace("RccService", "RobloxServer_Dedicated");
             }
 
             // Collect strings that match the pattern in the deployHistory.
             MatchCollection matches = Regex.Matches(deployHistory, MatchPattern);
 
             // Compute the difference between these logs so we only generate the RobloxDeployLogs we need.
-            List<string> oldLogs = branch.Source.Split('\n').ToList();
+            List<string> oldLogs = branch.Source.Split('\n').Where(log => log.Length > 0).ToList();
             List<string> newLogs = matches.Cast<Match>().Select(match => match.Value).ToList();
             List<string> diffLogs = newLogs.Where(log => !oldLogs.Contains(log)).ToList();
 

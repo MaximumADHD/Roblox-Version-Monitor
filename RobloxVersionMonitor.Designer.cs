@@ -79,7 +79,6 @@
             this.updateNotifier.BalloonTipIcon = System.Windows.Forms.ToolTipIcon.Info;
             this.updateNotifier.BalloonTipText = "Double click for details.";
             this.updateNotifier.BalloonTipTitle = "Roblox Update Detected!";
-            this.updateNotifier.Icon = ((System.Drawing.Icon)(resources.GetObject("updateNotifier.Icon")));
             this.updateNotifier.Text = "Roblox Update Notifier";
             this.updateNotifier.Visible = true;
             this.updateNotifier.BalloonTipClicked += new System.EventHandler(this.updateNotifier_BalloonTipClicked);
