@@ -6,12 +6,26 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+using Microsoft.Win32;
+
 namespace RobloxVersionMonitor
 {
+    public struct RobloxDeployLogBranch
+    {
+        public List<RobloxDeployLog> Logs;
+        public string Name;
+        public string Source;
+        public bool Dirty;
+        public bool Initialized;
+        public TabPage StatusPage;
+        public Label StatusLabel;
+        public TabPage HistoryPage;
+        public TreeView HistoryTree;
+    }
+
     public partial class RobloxVersionMonitor : Form
     {
-        private Dictionary<string,List<RobloxDeployLog>> previousLogs = null;
-        private Dictionary<string,List<RobloxDeployLog>> currentLogs = null;
+        private Dictionary<string, RobloxDeployLogBranch> currentLogs;
         private static string[] branches = new string[] { "roblox", "gametest1.robloxlabs", "gametest2.robloxlabs" };
 
         public RobloxVersionMonitor()
@@ -19,12 +33,13 @@ namespace RobloxVersionMonitor
             InitializeComponent();
         }
 
-        private void updateStatusPage(TabPage page)
+        private void UpdateStatusPage(RobloxDeployLogBranch deployBranch)
         {
-            string branch = page.ToolTipText;
-            List<RobloxDeployLog> deployLogs = currentLogs[branch];
-            Label statusLbl = (Label)page.Controls[branch + "_Status"];
+            string branch = deployBranch.Name;
+            List<RobloxDeployLog> deployLogs = deployBranch.Logs;
+            TabPage page = deployBranch.StatusPage;
 
+            Label statusLbl = (Label)page.Controls[branch + "_Status"];
             string newText = "Version Deploy Info:\n\n";
             foreach (RobloxDeployType deployType in Enum.GetValues(typeof(RobloxDeployType)))
             {
@@ -42,18 +57,20 @@ namespace RobloxVersionMonitor
             statusLbl.Text = newText;
         }
 
-        private void updateHistoryPage(TabPage page)
+        private void UpdateHistoryPage(RobloxDeployLogBranch deployBranch)
         {
-            string branch = page.ToolTipText;
-            List<RobloxDeployLog> deployLogs = currentLogs[branch];
+            string branch = deployBranch.Name;
+            List<RobloxDeployLog> deployLogs = deployBranch.Logs;
+            TabPage page = deployBranch.HistoryPage;
             TreeView tree = (TreeView)page.Controls[branch + "_Tree"];
 
             foreach (RobloxDeployType deployType in Enum.GetValues(typeof(RobloxDeployType)))
             {
-                RobloxDeployLog[] deployTypedLogs = deployLogs
+                List<RobloxDeployLog> deployTypedLogs = deployLogs
                     .Where(log => log.DeployType == deployType)
-                    .Reverse()
-                    .ToArray();
+                    .ToList();
+
+                deployTypedLogs.Sort();
 
                 string type = deployType.ToString();
                 TreeNode root = tree.Nodes[type];
@@ -67,10 +84,9 @@ namespace RobloxVersionMonitor
                     TreeNode logNode = root.Nodes[name];
                     if (logNode == null)
                     {
-                        logNode = root.Nodes.Add(name, name);
-                        logNode.Nodes.Add("Deploy Log:   " + deployLog.SourceLog);
+                        logNode = root.Nodes.Insert(0, name, name);
 
-                        TreeNode versionNode = 
+                        TreeNode versionNode =
                         logNode.Nodes.Add("Version Info: " + info.ToString());
 
                         if (info.Available)
@@ -81,34 +97,41 @@ namespace RobloxVersionMonitor
                             versionNode.Nodes.Add("Commit:     " + info.Commit);
                         }
 
+                        logNode.Nodes.Add("Deploy Log:   " + deployLog.SourceLog);
                         logNode.Nodes.Add("GUID:         " + deployLog.VersionGuid);
                         logNode.Nodes.Add("Deploy Time:  " + name);
-                        
                     }
                 }
             }
         }
 
-        private async void updateLogs(object sender = null, EventArgs e = null)
+        private async void UpdateLogs(object sender = null, EventArgs e = null)
         {
             Text = "(Refreshing)";
             UseWaitCursor = true;
-
-            previousLogs = currentLogs;
-            currentLogs = new Dictionary<string, List<RobloxDeployLog>>();
+            await Task.Delay(500);
 
             List<string> newLogs = new List<string>();
+            RegistryKey savedLogs = Program.OpenSubKey("LogHistory");
 
-            foreach (string branch in branches)
+            foreach (string branchName in branches)
             {
-                currentLogs[branch] = await RobloxDeployLog.CollectDeployLogs(branch);
-                if (previousLogs != null && previousLogs[branch].GetHashCode() != currentLogs[branch].GetHashCode())
+                RobloxDeployLogBranch branch = currentLogs[branchName];
+                List<string> newBranchLogs = await RobloxDeployLog.UpdateDeployLogs(branch);
+                if (newBranchLogs.Count > 0)
                 {
-                    currentLogs[branch]
-                        .Where(log => !previousLogs[branch].Contains(log))
-                        .Select(log => log.SourceLog)
-                        .ToList()
-                        .ForEach(log => { newLogs.Add("[" + branch + "] " + log); });
+                    string prefix = "[" + branch.Name + "] ";
+                    newBranchLogs.ForEach(log => { newLogs.Add(prefix + log); });
+
+                    branch.Source = string.Join("\n", newBranchLogs.ToArray());
+                    savedLogs.SetValue(branch.Name, branch.Source);
+                }
+
+                if (branch.Dirty)
+                {
+                    UpdateStatusPage(branch);
+                    UpdateHistoryPage(branch);
+                    branch.Dirty = false;
                 }
             }
 
@@ -118,53 +141,63 @@ namespace RobloxVersionMonitor
                 updateNotifier.ShowBalloonTip(10000);
             }
 
-            foreach (TabPage page in statusTabControl.TabPages)
-                updateStatusPage(page);
-
-            foreach (TabPage page in historyTabControl.TabPages)
-                updateHistoryPage(page);
-
-            UseWaitCursor = false;
             Text = "Roblox Version Monitor";
+            UseWaitCursor = false;
         }
 
         private void RobloxVersionMonitor_Load(object sender, EventArgs e)
         {
+            RegistryKey savedLogs = Program.OpenSubKey("LogHistory");
             Font baseFont = new Font("Consolas", 8.25f, FontStyle.Regular);
+            currentLogs = new Dictionary<string, RobloxDeployLogBranch>();
 
-            foreach (TabPage page in statusTabControl.TabPages)
+            foreach (string branch in branches)
             {
-                string branch = page.ToolTipText;
-                Label label = new Label();
-                label.Name = branch + "_Status";
-                label.Text = "Loading Status...";
-                label.AutoSize = true;
-                label.Font = baseFont;
-                page.Controls.Add(label);
-                page.AutoScroll = true;
-            }
+                RobloxDeployLogBranch logBranch = new RobloxDeployLogBranch
+                {
+                    Name = branch,
+                    Source = (string)savedLogs.GetValue(branch, ""),
+                    Logs = new List<RobloxDeployLog>(),
+                    Dirty = true,
+                    StatusPage = new TabPage
+                    {
+                        Name = branch,
+                        Text = branch,
+                        AutoScroll = true,
+                        Parent = statusTabControl,
+                    },
+                    StatusLabel = new Label
+                    {
+                        Name = branch + "_Status",
+                        Text = "Loading Status...",
+                        AutoSize = true,
+                        Font = baseFont,
+                    },
+                    HistoryPage = new TabPage
+                    {
+                        Name = branch,
+                        Text = branch,
+                        AutoScroll = true,
+                        Parent = historyTabControl,
+                    },
+                    HistoryTree = new TreeView
+                    {
+                        Name = branch + "_Tree",
+                        Dock = DockStyle.Fill,
+                        Font = baseFont,
+                    },
+                };
 
-            foreach (TabPage page in historyTabControl.TabPages)
-            {
-                string branch = page.ToolTipText;
-                TreeView tree = new TreeView();
-                tree.Name = branch + "_Tree";
-                tree.Dock = DockStyle.Fill;
-                tree.Font = baseFont;
-                page.Controls.Add(tree);
-                page.AutoScroll = true;
+                logBranch.StatusPage.Controls.Add(logBranch.StatusLabel);
+                logBranch.HistoryPage.Controls.Add(logBranch.HistoryTree);
+                currentLogs[branch] = logBranch;
             }
-
-            // Uncomment this to debug notifications.
-            //currentLogs = new Dictionary<string, List<RobloxDeployLog>>();
-            //foreach (string branch in branches)
-            //    currentLogs[branch] = new List<RobloxDeployLog>();
 
             Timer timer = new Timer { Interval = 30000 };
-            timer.Tick += new EventHandler(updateLogs);
-            timer.Start();
+            timer.Tick += new EventHandler(UpdateLogs);
+            UpdateLogs();
 
-            updateLogs();
+            timer.Start();
         }
 
         private void updateNotifier_BalloonTipClicked(object sender, EventArgs e)

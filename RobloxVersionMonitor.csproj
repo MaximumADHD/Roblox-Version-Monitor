@@ -65,22 +65,6 @@
     <Compile Include="RobloxUpdateLog.Designer.cs">
       <DependentUpon>RobloxUpdateLog.cs</DependentUpon>
     </Compile>
-    <EmbeddedResource Include="RobloxUpdateLog.resx">
-      <DependentUpon>RobloxUpdateLog.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="RobloxVersionMonitor.resx">
-      <DependentUpon>RobloxVersionMonitor.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Properties\Resources.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
-      <SubType>Designer</SubType>
-    </EmbeddedResource>
-    <Compile Include="Properties\Resources.Designer.cs">
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Resources.resx</DependentUpon>
-      <DesignTime>True</DesignTime>
-    </Compile>
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
@@ -93,6 +77,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="RobloxVersionMonitor.resx">
+      <DependentUpon>RobloxVersionMonitor.cs</DependentUpon>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>

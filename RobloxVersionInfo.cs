@@ -58,7 +58,12 @@ namespace RobloxVersionMonitor
 
         public override bool Equals(object obj)
         {
-            return ToString() == obj.ToString() && obj.GetType() == typeof(RobloxDeployLog);
+            if (obj.GetType() == typeof(RobloxDeployLog))
+            {
+                RobloxDeployLog log = (RobloxDeployLog)obj;
+                return (VersionGuid == log.VersionGuid);
+            }
+            return false;
         }
 
         public override int GetHashCode()
@@ -76,17 +81,11 @@ namespace RobloxVersionMonitor
             return 0;
         }
 
-        public static async Task<List<RobloxDeployLog>> CollectDeployLog(string deployHistoryUrl, string platform)
+        public static void AddDeployLogs(RobloxDeployLogBranch branch, List<string> deployLogs)
         {
-            string deployHistory;
-            using (WebClient http = new WebClient())
-                deployHistory = await http.DownloadStringTaskAsync(deployHistoryUrl);
-
-            MatchCollection matches = Regex.Matches(deployHistory, MatchPattern);
-            List<RobloxDeployLog> deployLogs = new List<RobloxDeployLog>();
-
-            foreach (Match match in matches)
+            foreach (string log in deployLogs)
             {
+                Match match = Regex.Match(log, MatchPattern);
                 string[] data = match.Groups.Cast<Group>()  // Cast the groups into an IEnumerable<Group>.
                     .Select(group => group.Value)           // Select the values of the groups
                     .Where(value => value.Length != 0)      // where the values aren't empty strings
@@ -94,13 +93,6 @@ namespace RobloxVersionMonitor
 
                 RobloxDeployLog deployLog = new RobloxDeployLog();
                 string deployType = data[1];
-                if (deployType == "WindowsPlayer")
-                    deployType = "Client";
-
-                if (deployType.ToLower() == "rccservice")
-                    deployType = "Server";
-                else
-                    deployType += '_' + platform;
 
                 if (Enum.TryParse(deployType, out deployLog.DeployType))
                 {
@@ -119,26 +111,57 @@ namespace RobloxVersionMonitor
                         deployLog.VersionInfo = versionInfo;
                     }
 
-                    deployLogs.Add(deployLog);
+                    branch.Logs.Add(deployLog);
                 }
             }
-
-            return deployLogs;
         }
 
-        public static async Task<List<RobloxDeployLog>> CollectDeployLogs(string branch)
+        public static async Task<List<string>> UpdateDeployLogs(RobloxDeployLogBranch branch)
         {
-            string setupUrl = "http://setup." + branch + ".com/";
+            string setupUrl = "http://setup." + branch.Name + ".com/";
 
             // There are two deploy log sources that we have to collect from.
-            List<RobloxDeployLog> winDeployLogs = await CollectDeployLog(setupUrl + "DeployHistory.txt", "Windows");
-            List<RobloxDeployLog> macDeployLogs = await CollectDeployLog(setupUrl + "mac/DeployHistory.txt", "Mac");
+            string deployHistory;
+            using (WebClient http = new WebClient())
+            {
+                string winDeployHistory = await http.DownloadStringTaskAsync(setupUrl + "DeployHistory.txt");
+                winDeployHistory = winDeployHistory
+                    .Replace("WindowsPlayer", "Client")
+                    .Replace("Client", "Client_Windows")
+                    .Replace("Studio", "Studio_Windows");
 
-            // Merge them together and sort by date.
-            List<RobloxDeployLog> deployLogs = winDeployLogs.Concat(macDeployLogs).ToList();
-            deployLogs.Sort();
+                string macDeployHistory = await http.DownloadStringTaskAsync(setupUrl + "mac/DeployHistory.txt");
+                macDeployHistory = macDeployHistory
+                    .Replace("Client", "Client_Mac")
+                    .Replace("Studio", "Studio_Mac");
 
-            return deployLogs;
+                deployHistory = (winDeployHistory + '\n' + macDeployHistory)
+                    .Replace("RccService", "Server");
+            }
+
+            // Collect strings that match the pattern in the deployHistory.
+            MatchCollection matches = Regex.Matches(deployHistory, MatchPattern);
+
+            // Compute the difference between these logs so we only generate the RobloxDeployLogs we need.
+            List<string> oldLogs = branch.Source.Split('\n').ToList();
+            List<string> newLogs = matches.Cast<Match>().Select(match => match.Value).ToList();
+            List<string> diffLogs = newLogs.Where(log => !oldLogs.Contains(log)).ToList();
+
+            if (!branch.Initialized)
+            {
+                AddDeployLogs(branch, oldLogs);
+                branch.Initialized = true;
+            }
+
+            // Collect and return the newly collected logs.
+            if (diffLogs.Count > 0)
+            {
+                AddDeployLogs(branch, diffLogs);
+                branch.Logs.Sort();
+                branch.Dirty = true;
+            }
+
+            return diffLogs;
         }
     }
 }
